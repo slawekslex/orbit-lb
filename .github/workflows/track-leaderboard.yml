@@ -28,7 +28,7 @@ jobs:
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
-          KAGGLE_TEAM: ${{ vars.KAGGLE_TEAM }}
+          KAGGLE_TEAM: "Slawek Biel"
         run: python track_rank.py
 
       - name: Commit results
