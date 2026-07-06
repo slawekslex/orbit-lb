@@ -65,8 +65,14 @@ function parseCSV(text) {
 
 const toISO = ts => ts.replace(" ", "T") + "Z";
 
+// Fetch data straight from the repo, not the Pages deployment: Pages only
+// redeploys the site on each commit (and occasionally fails), while raw
+// always serves the latest committed data. Relative paths for local testing.
+const DATA_BASE = location.hostname.endsWith("github.io")
+  ? "https://raw.githubusercontent.com/slawekslex/orbit-lb/main/" : "";
+
 async function fetchCSV(name) {
-  const resp = await fetch(`${name}?t=${Date.now()}`, { cache: "no-store" });
+  const resp = await fetch(`${DATA_BASE}${name}?t=${Date.now()}`, { cache: "no-store" });
   if (!resp.ok) throw new Error(`${name}: HTTP ${resp.status}`);
   return parseCSV(await resp.text());
 }
