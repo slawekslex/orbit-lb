@@ -135,9 +135,7 @@ function draw() {
     line: { width: 3.5, color: "crimson" },
   });
 
-  // Kaggle gold zone: top 10 + 0.2% of teams.
-  const total = myLatest ? +myLatest.total_teams : 4730;
-  const goldCutoff = 10 + Math.floor(total * 0.002);
+  const goldCutoff = 19; // top 10 + 0.2% of the (frozen) 4730-team field
   const goldLine = metric === "rank" ? {
     shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1,
                y0: goldCutoff + 0.5, y1: goldCutoff + 0.5,
