@@ -1,12 +1,20 @@
 name: Track leaderboard
 
+# GitHub's cron scheduler is best-effort and heavily throttled for short
+# intervals, so instead of relying on it each run loops internally every
+# 15 minutes for ~5.7h (just under the 6h job limit), then dispatches its
+# own successor. The hourly cron is only a backstop that restarts the
+# chain if it ever dies. The concurrency group guarantees at most one
+# running loop plus one queued successor.
+
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "23 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: track-leaderboard
@@ -15,6 +23,7 @@ concurrency:
 jobs:
   track:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
@@ -24,17 +33,27 @@ jobs:
 
       - run: pip install kaggle
 
-      - name: Fetch leaderboard
+      - name: Track every 15 minutes
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           KAGGLE_TEAM: "Slawek Biel"
-        run: python track_rank.py
-
-      - name: Commit results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -- *.csv
-          git diff --cached --quiet || git commit -m "Update leaderboard data"
-          git pull --rebase
-          git push
+          end=$((SECONDS + 340 * 60))
+          while [ "$SECONDS" -lt "$end" ]; do
+            if python track_rank.py; then
+              git add -- *.csv
+              git diff --cached --quiet || git commit -m "Update leaderboard data"
+              git pull --rebase && git push || echo "push failed, retrying next cycle"
+            else
+              echo "leaderboard fetch failed, retrying next cycle"
+            fi
+            sleep 900
+          done
+
+      - name: Chain next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run track-leaderboard.yml --ref main --repo "$GITHUB_REPOSITORY"
