@@ -64,6 +64,9 @@ function parseCSV(text) {
 }
 
 const toISO = ts => ts.replace(" ", "T") + "Z";
+// Plotly has no timezone support — give it pre-converted local-time strings.
+const toLocal = ts => new Date(toISO(ts)).toLocaleString("sv-SE");
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 // Fetch data straight from the repo, not the Pages deployment: Pages only
 // redeploys the site on each commit (and occasionally fails), while raw
@@ -98,7 +101,7 @@ function draw() {
 
   const traces = teams.map(team => ({
     name: team,
-    x: byTeam[team].map(r => toISO(r.timestamp_utc)),
+    x: byTeam[team].map(r => toLocal(r.timestamp_utc)),
     y: byTeam[team].map(r => +r[metric]),
     mode: "lines+markers",
     marker: { size: 4 },
@@ -109,7 +112,7 @@ function draw() {
   const my = mine.length ? mine : (byTeam[MY_TEAM] || []);
   if (my.length) traces.push({
     name: `${MY_TEAM} (me)`,
-    x: my.map(r => toISO(r.timestamp_utc)),
+    x: my.map(r => toLocal(r.timestamp_utc)),
     y: my.map(r => +r[metric]),
     mode: "lines+markers",
     marker: { size: 6 },
@@ -119,7 +122,7 @@ function draw() {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   Plotly.newPlot("chart", traces, {
     margin: { t: 20, r: 10 },
-    xaxis: { title: "UTC" },
+    xaxis: { title: TZ },
     yaxis: { title: metric, autorange: metric === "rank" ? "reversed" : true },
     hovermode: "closest",
     legend: { orientation: "h", y: -0.18 },
@@ -139,7 +142,7 @@ async function load() {
     const ageMin = Math.round((Date.now() - new Date(toISO(lastTs))) / 60000);
     const me = mine[mine.length - 1];
     document.getElementById("meta").textContent =
-      `last snapshot: ${lastTs} UTC (${ageMin} min ago)` +
+      `last snapshot: ${toLocal(lastTs)} (${ageMin} min ago)` +
       (me ? ` — my rank: ${me.rank}/${me.total_teams}, score ${me.score}` : "");
     draw();
   } catch (e) {
