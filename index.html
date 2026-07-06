@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orbit-wars leaderboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    margin: 0 auto; max-width: 1100px; padding: 16px;
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  #meta { color: #888; font-size: 0.85rem; margin-bottom: 12px; }
+  #controls { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; font-size: 0.9rem; }
+  #controls label { display: flex; gap: 6px; align-items: center; }
+  #chart { width: 100%; height: 600px; }
+  button.active { font-weight: bold; text-decoration: underline; }
+</style>
+</head>
+<body>
+<h1>Kaggle orbit-wars — leaderboard over time</h1>
+<div id="meta">loading…</div>
+<div id="controls">
+  <span>
+    Metric:
+    <button id="btn-rank" class="active" onclick="setMetric('rank')">rank</button>
+    <button id="btn-score" onclick="setMetric('score')">score</button>
+  </span>
+  <label>Teams shown:
+    <select id="topn" onchange="draw()">
+      <option>5</option><option selected>10</option><option>20</option><option>50</option>
+    </select>
+  </label>
+  <span style="color:#888">(click legend entries to hide/show teams)</span>
+</div>
+<div id="chart"></div>
+
+<script>
+const MY_TEAM = "Slawek Biel";
+let metric = "rank";
+let top50 = [], mine = [];
+
+// Minimal quote-aware CSV parser (team names may contain commas).
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') inQuotes = false;
+      else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (field !== "" || row.length) { row.push(field); rows.push(row); row = []; field = ""; }
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  const header = rows.shift();
+  return rows.map(r => Object.fromEntries(header.map((h, i) => [h, r[i]])));
+}
+
+const toISO = ts => ts.replace(" ", "T") + "Z";
+
+async function fetchCSV(name) {
+  const resp = await fetch(`${name}?t=${Date.now()}`, { cache: "no-store" });
+  if (!resp.ok) throw new Error(`${name}: HTTP ${resp.status}`);
+  return parseCSV(await resp.text());
+}
+
+function setMetric(m) {
+  metric = m;
+  document.getElementById("btn-rank").classList.toggle("active", m === "rank");
+  document.getElementById("btn-score").classList.toggle("active", m === "score");
+  draw();
+}
+
+function draw() {
+  if (!top50.length) return;
+  const topN = +document.getElementById("topn").value;
+
+  const lastTs = top50[top50.length - 1].timestamp_utc;
+  const latest = top50.filter(r => r.timestamp_utc === lastTs)
+                      .sort((a, b) => +a.rank - +b.rank);
+  const teams = latest.slice(0, topN).map(r => r.team).filter(t => t !== MY_TEAM);
+
+  const byTeam = {};
+  for (const r of top50) (byTeam[r.team] ??= []).push(r);
+
+  const traces = teams.map(team => ({
+    name: team,
+    x: byTeam[team].map(r => toISO(r.timestamp_utc)),
+    y: byTeam[team].map(r => +r[metric]),
+    mode: "lines+markers",
+    marker: { size: 4 },
+    line: { width: 1.5 },
+    opacity: 0.75,
+  }));
+
+  const my = mine.length ? mine : (byTeam[MY_TEAM] || []);
+  if (my.length) traces.push({
+    name: `${MY_TEAM} (me)`,
+    x: my.map(r => toISO(r.timestamp_utc)),
+    y: my.map(r => +r[metric]),
+    mode: "lines+markers",
+    marker: { size: 6 },
+    line: { width: 3.5, color: "crimson" },
+  });
+
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  Plotly.newPlot("chart", traces, {
+    margin: { t: 20, r: 10 },
+    xaxis: { title: "UTC" },
+    yaxis: { title: metric, autorange: metric === "rank" ? "reversed" : true },
+    hovermode: "closest",
+    legend: { orientation: "h", y: -0.18 },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: dark ? "#ddd" : "#333" },
+  }, { responsive: true, displaylogo: false });
+}
+
+async function load() {
+  try {
+    [top50, mine] = await Promise.all([
+      fetchCSV("top50_history.csv"),
+      fetchCSV("rank_history.csv").catch(() => []),
+    ]);
+    const lastTs = top50[top50.length - 1].timestamp_utc;
+    const ageMin = Math.round((Date.now() - new Date(toISO(lastTs))) / 60000);
+    const me = mine[mine.length - 1];
+    document.getElementById("meta").textContent =
+      `last snapshot: ${lastTs} UTC (${ageMin} min ago)` +
+      (me ? ` — my rank: ${me.rank}/${me.total_teams}, score ${me.score}` : "");
+    draw();
+  } catch (e) {
+    document.getElementById("meta").textContent = `failed to load data: ${e.message}`;
+  }
+}
+
+load();
+setInterval(load, 5 * 60 * 1000); // refresh data every 5 minutes
+</script>
+</body>
+</html>
