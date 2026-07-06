@@ -28,9 +28,13 @@
     <button id="btn-rank" class="active" onclick="setMetric('rank')">rank</button>
     <button id="btn-score" onclick="setMetric('score')">score</button>
   </span>
-  <label>Teams shown:
-    <select id="topn" onchange="draw()">
-      <option>5</option><option selected>10</option><option>20</option><option>50</option>
+  <label>Show:
+    <select id="view" onchange="draw()">
+      <option value="near5">±5 around me</option>
+      <option value="near10" selected>±10 around me</option>
+      <option value="top10">top 10</option>
+      <option value="top20">top 20</option>
+      <option value="top50">top 50</option>
     </select>
   </label>
   <span style="color:#888">(click legend entries to hide/show teams)</span>
@@ -89,12 +93,24 @@ function setMetric(m) {
 
 function draw() {
   if (!top50.length) return;
-  const topN = +document.getElementById("topn").value;
+  const view = document.getElementById("view").value;
 
   const lastTs = top50[top50.length - 1].timestamp_utc;
   const latest = top50.filter(r => r.timestamp_utc === lastTs)
                       .sort((a, b) => +a.rank - +b.rank);
-  const teams = latest.slice(0, topN).map(r => r.team).filter(t => t !== MY_TEAM);
+
+  const myLatest = mine[mine.length - 1];
+  const myRank = myLatest ? +myLatest.rank
+    : +(latest.find(r => r.team === MY_TEAM)?.rank ?? 20);
+
+  let picked;
+  if (view.startsWith("near")) {
+    const k = +view.slice(4);
+    picked = latest.filter(r => Math.abs(+r.rank - myRank) <= k);
+  } else {
+    picked = latest.slice(0, +view.slice(3));
+  }
+  const teams = picked.map(r => r.team).filter(t => t !== MY_TEAM);
 
   const byTeam = {};
   for (const r of top50) (byTeam[r.team] ??= []).push(r);
@@ -119,11 +135,24 @@ function draw() {
     line: { width: 3.5, color: "crimson" },
   });
 
+  // Kaggle gold zone: top 10 + 0.2% of teams.
+  const total = myLatest ? +myLatest.total_teams : 4730;
+  const goldCutoff = 10 + Math.floor(total * 0.002);
+  const goldLine = metric === "rank" ? {
+    shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1,
+               y0: goldCutoff + 0.5, y1: goldCutoff + 0.5,
+               line: { color: "gold", width: 1.5, dash: "dash" } }],
+    annotations: [{ xref: "paper", x: 0.01, y: goldCutoff + 0.5, yanchor: "bottom",
+                    text: `gold (top ${goldCutoff})`, showarrow: false,
+                    font: { color: "gold", size: 11 } }],
+  } : {};
+
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   Plotly.newPlot("chart", traces, {
     margin: { t: 20, r: 10 },
     xaxis: { title: TZ },
     yaxis: { title: metric, autorange: metric === "rank" ? "reversed" : true },
+    ...goldLine,
     hovermode: "closest",
     legend: { orientation: "h", y: -0.18 },
     paper_bgcolor: "rgba(0,0,0,0)",
