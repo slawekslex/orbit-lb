@@ -40,6 +40,17 @@
   <span style="color:#888">(click legend entries to hide/show teams)</span>
 </div>
 <div id="chart"></div>
+<h2 style="font-size:1.05rem; margin:20px 0 8px">Zone persistence (share of all snapshots)</h2>
+<table id="zonetable"></table>
+<style>
+  #zonetable { border-collapse: collapse; font-size: 0.9rem; min-width: 480px; }
+  #zonetable th, #zonetable td { padding: 4px 14px 4px 0; text-align: right; }
+  #zonetable th:nth-child(2), #zonetable td:nth-child(2) { text-align: left; }
+  #zonetable th { border-bottom: 1px solid #888; }
+  #zonetable tr.me { color: crimson; font-weight: bold; }
+  #zonetable td.green { color: #2e9e4f; }
+  #zonetable td.gold { color: #b8960c; }
+</style>
 
 <script>
 const MY_TEAM = "Slawek Biel";
@@ -159,6 +170,46 @@ function draw() {
   }, { responsive: true, displaylogo: false });
 }
 
+function buildTable() {
+  const snaps = [...new Set(top50.map(r => r.timestamp_utc))];
+  const nSnap = snaps.length;
+  const lastTs = snaps[snaps.length - 1];
+
+  const stats = {};
+  for (const r of top50) {
+    const s = (stats[r.team] ??= { green: 0, gold: 0, latest: null });
+    const rank = +r.rank;
+    if (rank <= 10) s.green++;
+    if (rank <= 19) s.gold++;
+    if (r.timestamp_utc === lastTs) s.latest = rank;
+  }
+
+  const rows = Object.entries(stats)
+    .map(([team, s]) => ({ team, green: 100 * s.green / nSnap, gold: 100 * s.gold / nSnap, latest: s.latest }))
+    .sort((a, b) => b.green - a.green || b.gold - a.gold || (a.latest ?? 999) - (b.latest ?? 999))
+    .slice(0, 25);
+
+  const table = document.getElementById("zonetable");
+  table.innerHTML = "";
+  const head = table.insertRow();
+  for (const h of ["#", "team", "green (top 10) %", "gold (top 19) %", "latest rank"]) {
+    const th = document.createElement("th");
+    th.textContent = h;
+    head.appendChild(th);
+  }
+  rows.forEach((r, i) => {
+    const tr = table.insertRow();
+    if (r.team === MY_TEAM) tr.className = "me";
+    const cells = [i + 1, r.team, r.green.toFixed(1), r.gold.toFixed(1), r.latest ?? "50+"];
+    cells.forEach((v, j) => {
+      const td = tr.insertCell();
+      td.textContent = v;
+      if (j === 2) td.className = "green";
+      if (j === 3) td.className = "gold";
+    });
+  });
+}
+
 async function load() {
   try {
     [top50, mine] = await Promise.all([
@@ -172,6 +223,7 @@ async function load() {
       `last snapshot: ${toLocal(lastTs)} (${ageMin} min ago)` +
       (me ? ` — my rank: ${me.rank}/${me.total_teams}, score ${me.score}` : "");
     draw();
+    buildTable();
   } catch (e) {
     document.getElementById("meta").textContent = `failed to load data: ${e.message}`;
   }
