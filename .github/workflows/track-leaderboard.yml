@@ -42,12 +42,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           end=$((SECONDS + 340 * 60))
           while [ "$SECONDS" -lt "$end" ]; do
-            if python track_rank.py; then
+            # Start every cycle from a clean, current base so a botched
+            # rebase or rejected push can never wedge the loop, and cap the
+            # fetch so a stalled connection can't hang it.
+            git rebase --abort 2>/dev/null || true
+            git fetch origin && git reset --hard origin/main
+            if timeout 180 python track_rank.py; then
               git add -- *.csv
               git diff --cached --quiet || git commit -m "Update leaderboard data"
-              git pull --rebase && git push || echo "push failed, retrying next cycle"
+              git push || echo "push failed, retrying next cycle"
             else
-              echo "leaderboard fetch failed, retrying next cycle"
+              echo "fetch failed or timed out, retrying next cycle"
             fi
             sleep 900
           done
